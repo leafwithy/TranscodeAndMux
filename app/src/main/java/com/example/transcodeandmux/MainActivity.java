@@ -12,6 +12,9 @@ import android.widget.Button;
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * Created by weizheng.huang on 2019-11-11.
  */
@@ -44,9 +47,14 @@ public class MainActivity extends Activity {
     }
 
     private void initTranscode(){
-        transcodeWrapperDemo = new TranscodeWrapperDemo(dstPath,srcPath,srcPath2);
+//        transcodeWrapperDemo = new TranscodeWrapperDemo(dstPath,srcPath,srcPath2);
+        List<TailTimer> fileList = new ArrayList<TailTimer>();
+        fileList.add(new TailTimer(121,151,srcPath,srcPath2));
+        fileList.add(new TailTimer(61,121 , srcPath ,srcPath2));
+        fileList.add(new TailTimer(31 , 61 ,srcPath ,srcPath2));
+        transcodeWrapperDemo = new TranscodeWrapperDemo(dstPath,fileList);
         transcodeWrapperDemo.setAssignSize(1.0);
-        transcodeWrapperDemo.init();
+        transcodeWrapperDemo.initMediaMuxer();
 
     }
 
