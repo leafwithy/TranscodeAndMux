@@ -8,9 +8,14 @@ import android.os.Bundle;
 import android.os.Environment;
 import android.view.View;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
+
+import com.example.transcodeandmux.utils.TailTimer;
+import com.example.transcodeandmux.utils.TailTimerEditText;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,12 +24,16 @@ import java.util.List;
  * Created by weizheng.huang on 2019-11-11.
  */
 public class MainActivity extends Activity {
-    private TranscodeWrapperDemo transcodeWrapperDemo;
+    private TranscodeWrapperDemo3 transcodeWrapperDemo;
     private AssetFileDescriptor srcPath ;
     private AssetFileDescriptor srcPath2 ;
     private String dstPath = Environment.getExternalStorageDirectory().getAbsolutePath() +"/shape1.mp4";
     private Button transcodeBtn;
-
+    private EditText countEditText;
+    private LinearLayout iContentView ;
+    private Button refreshBtn;
+    private Button deleteBtn;
+    private List<TailTimerEditText> tailTimerEditTextList = new ArrayList<>();
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -33,6 +42,22 @@ public class MainActivity extends Activity {
         transcodeBtn = findViewById(R.id.transcodeBtn);
         srcPath = getResources().openRawResourceFd(R.raw.shape_of_my_heart);
         srcPath2 = getResources().openRawResourceFd(R.raw.shape_of_my_heart2);
+        countEditText = findViewById(R.id.countOfTailTime);
+        iContentView = findViewById(R.id.contentView);
+        refreshBtn = findViewById(R.id.refreshBtn);
+        deleteBtn = findViewById(R.id.deleteBtn);
+        refreshBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                addTailTimer();
+            }
+        });
+        deleteBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                deleteTailTimer();
+            }
+        });
 
         transcodeBtn.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -45,16 +70,36 @@ public class MainActivity extends Activity {
             }
         });
     }
+    private void addTailTimer(){
+        int count = Integer.valueOf(countEditText.getText().toString());
+        for (int i = 0; i < count; i++){
+            TailTimerEditText text = new TailTimerEditText(this);
+            text.secondEdit.setText("0");
+            text.minuteEdit.setText("0");
+            text.secondEdit2.setText("0");
+            text.minuteEdit2.setText("0");
+            tailTimerEditTextList.add(text);
+            iContentView.addView(text);
+        }
+        getWindow().getDecorView().invalidate();
+    }
+
+    private void deleteTailTimer(){
+        iContentView.removeAllViews();
+        tailTimerEditTextList.removeAll(tailTimerEditTextList);
+
+    }
 
     private void initTranscode(){
-//        transcodeWrapperDemo = new TranscodeWrapperDemo(dstPath,srcPath,srcPath2);
-        List<TailTimer> fileList = new ArrayList<TailTimer>();
-        fileList.add(new TailTimer(121,151,srcPath,srcPath2));
-        fileList.add(new TailTimer(61,121 , srcPath ,srcPath2));
-        fileList.add(new TailTimer(31 , 61 ,srcPath ,srcPath2));
-        transcodeWrapperDemo = new TranscodeWrapperDemo(dstPath,fileList);
-        transcodeWrapperDemo.setAssignSize(1.0);
-        transcodeWrapperDemo.initMediaMuxer();
+        List<TailTimer> fileList = new ArrayList<>();
+        for (int i = 0; i < tailTimerEditTextList.size(); i++) {
+            TailTimerEditText text = tailTimerEditTextList.get(i);
+            long startTime = Integer.valueOf(text.minuteEdit.getText().toString()) * 60 + Integer.valueOf(text.secondEdit.getText().toString());
+            long endTime = Integer.valueOf(text.minuteEdit2.getText().toString()) * 60 + Integer.valueOf(text.secondEdit2.getText().toString());
+            fileList.add(new TailTimer(startTime,endTime,srcPath,srcPath2));
+        }
+
+        transcodeWrapperDemo = new TranscodeWrapperDemo3(dstPath,fileList);
 
     }
 
@@ -65,7 +110,7 @@ public class MainActivity extends Activity {
         };
         int permission = ActivityCompat.checkSelfPermission(activity, Manifest.permission.WRITE_EXTERNAL_STORAGE);
         if (permission != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this, PERMISSIONS_STORAGE, 1);
+            ActivityCompat.requestPermissions(activity, PERMISSIONS_STORAGE, 1);
         }
         return permission == PackageManager.PERMISSION_GRANTED;
 
