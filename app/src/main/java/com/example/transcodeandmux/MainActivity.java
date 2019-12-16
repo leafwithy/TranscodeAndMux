@@ -24,7 +24,7 @@ import java.util.List;
  * Created by weizheng.huang on 2019-11-11.
  */
 public class MainActivity extends Activity {
-    private TranscodeWrapperDemo3 transcodeWrapperDemo;
+    private WrapperDemo transcode;
     private AssetFileDescriptor srcPath ;
     private AssetFileDescriptor srcPath2 ;
     private String dstPath = Environment.getExternalStorageDirectory().getAbsolutePath() +"/shape1.mp4";
@@ -64,7 +64,7 @@ public class MainActivity extends Activity {
             public void onClick(View view) {
                 if (verifyPermission(MainActivity.this)){
                     initTranscode();
-                    transcodeWrapperDemo.startTranscode();
+                    transcode.startTranscode();
                 }
 
             }
@@ -99,7 +99,7 @@ public class MainActivity extends Activity {
             fileList.add(new TailTimer(startTime,endTime,srcPath,srcPath2));
         }
 
-        transcodeWrapperDemo = new TranscodeWrapperDemo3(dstPath,fileList);
+        transcode = new WrapperDemo(dstPath,fileList);
 
     }
 
