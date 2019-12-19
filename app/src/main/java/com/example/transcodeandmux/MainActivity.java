@@ -24,7 +24,7 @@ import java.util.List;
  * Created by weizheng.huang on 2019-11-11.
  */
 public class MainActivity extends Activity {
-    private TranscodeWrapperDemo3 transcode;
+    private WrapperDemo transcode;
 //    private WrapperDemo transcode ;
     private AssetFileDescriptor srcPath ;
     private AssetFileDescriptor srcPath2 ;
@@ -101,7 +101,7 @@ public class MainActivity extends Activity {
         }
 
 //        transcode = new WrapperDemo(dstPath,fileList);
-        transcode = new TranscodeWrapperDemo3(dstPath , fileList);
+        transcode = new WrapperDemo(dstPath , fileList);
     }
 
     private boolean verifyPermission(Activity activity){
