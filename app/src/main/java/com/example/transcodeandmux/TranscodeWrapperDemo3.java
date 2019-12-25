@@ -372,6 +372,7 @@ public class TranscodeWrapperDemo3 {
                     int size = readSampleData(extractor, inputBuffer);
                     if (size > 0) {
                         if (extractor.getSampleTime() > endTime1 && isNeedTailed) {
+
                             decodec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
                             readEOS = true;
                         } else {
@@ -503,7 +504,7 @@ public class TranscodeWrapperDemo3 {
         }
         if (isNeedTailed){
             audioExtractor.seekTo(startsTime1,MediaExtractor.SEEK_TO_CLOSEST_SYNC);
-            if (audioExtractor.getSampleTime() < startTime2){
+            if (audioExtractor.getSampleTime() < startsTime1){
                 audioExtractor.seekTo(startsTime1,MediaExtractor.SEEK_TO_NEXT_SYNC);
             }
         }

@@ -2,6 +2,8 @@ package com.example.transcodeandmux.utils;
 
 import android.content.res.AssetFileDescriptor;
 
+import androidx.annotation.Nullable;
+
 /**
  * Created by weizheng.huang on 2019-11-11.
  */
@@ -37,4 +39,17 @@ public class TailTimer {
         return srcPath2;
     }
 
+    @Override
+    public boolean equals(@Nullable Object obj) {
+        return super.equals(obj);
+    }
+
+    //    @Override
+//    public boolean equals(@Nullable Object obj) {
+//        TailTimer tailTimer = (TailTimer) obj;
+//        return (this.startTime == tailTimer.startTime) &&
+//                (this.endTime == tailTimer.endTime) &&
+//                (this.srcPath == tailTimer.srcPath) &&
+//                (this.srcPath2 == tailTimer.srcPath2);
+//    }
 }

@@ -1,4 +1,4 @@
-package com.example.transcodeandmux;
+package com.nio.screenprojection;
 
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
@@ -24,7 +24,7 @@ public class TransCodeWrapper {
 
     private Thread inputLoop, outputLoop;
     private ArrayList<Info> fileList;
-    private Info currentInfo = new Info();
+    private Info currentInfo = new Info(), preInfo = null;
     private boolean bStop = false;
 
     private MediaExtractor audioExtractor, videoExtractor;
@@ -90,20 +90,22 @@ public class TransCodeWrapper {
         int readIndex = videoTrackIndex;
         long readTimeStamp;
         boolean needSwitchNext = true, audioDecoderEof = false, videoDecoderEof = false;
+        int currentInforIndex = -1;
 
         while (false != bStop) {
 
             if (true == needSwitchNext) {
-                for (Info info : fileList) {
-                    currentInfo.start = info.start;
-                    currentInfo.end = info.end;
+                currentInforIndex ++;
+                if (currentInforIndex < fileList.size()) {
+                    preInfo = currentInfo;
+                    currentInfo.start = fileList.get(currentInforIndex).start;
+                    currentInfo.end = fileList.get(currentInforIndex).end;
 
                     if (0 < currentInfo.start) {
                         audioExtractor.seekTo(currentInfo.start, SEEK_TO_PREVIOUS_SYNC);
                         videoExtractor.seekTo(currentInfo.start, SEEK_TO_PREVIOUS_SYNC);
                     }
                     needSwitchNext = false;
-                    break;
                 }
                 if (true == needSwitchNext) {
                     if (false == audioDecoderEof) {
@@ -139,6 +141,10 @@ public class TransCodeWrapper {
                 int size = extractor.readSampleData(decoder.getInputBuffer(index), 0);
                 if (0 < size) {
                     readTimeStamp = extractor.getSampleTime();
+
+
+
+
                     decoder.queueInputBuffer(index, 0, size, readTimeStamp, extractor.getSampleFlags());
                     extractor.advance();
 
@@ -146,7 +152,6 @@ public class TransCodeWrapper {
                         audioReadTimestamp = readTimeStamp;
                     else
                         videoReadTimestamp = readTimeStamp;
-
                     if(audioReadTimestamp >= currentInfo.end && videoReadTimestamp >= currentInfo.end)
                         needSwitchNext = true;
 
@@ -178,7 +183,7 @@ public class TransCodeWrapper {
             if (MediaCodec.BUFFER_FLAG_END_OF_STREAM != videoEncoderIndex)
                 videoEncoderIndex = encoder2Muxer(false);
 
-            if (MediaCodec.BUFFER_FLAG_END_OF_STREAM == audioEncoderIndex && MediaCodec.BUFFER_FLAG_END_OF_STREAM == videoEncoderIndex) {
+            if (MediaCodec.BUFFER_FLAG_END_OF_STREAM != audioEncoderIndex && MediaCodec.BUFFER_FLAG_END_OF_STREAM != videoEncoderIndex) {
                 Log.d(TAG, "Process finished ");
                 break;
             }
@@ -193,12 +198,11 @@ public class TransCodeWrapper {
         int decoderIndex = MediaCodec.INFO_TRY_AGAIN_LATER;
         int encoderIndex = MediaCodec.INFO_TRY_AGAIN_LATER;
         boolean encoderRetry = false;
-        long preAudioTimestamp = 0, preVideoTimestamp = 0;
 
         MediaCodec decoder = audio ? audioDecoder : videoDecoder;
         MediaCodec encoder = audio ? audioEncoder : videoEncoder;
 
-        while (!bStop) {
+        while (true) {
 
             if (!encoderRetry)
                 decoderIndex = decoder.dequeueOutputBuffer(bufferInfo, 5);
@@ -208,13 +212,11 @@ public class TransCodeWrapper {
                     encoderIndex = encoder.dequeueInputBuffer(50);
                     if (0 <= encoderIndex) {
                         long gap = bufferInfo.presentationTimeUs - currentInfo.start;
-                        if (audio) {
-                            audioEncoderInputTimestamp += (gap - preAudioTimestamp);
-                            preAudioTimestamp = gap;
-                        } else {
-                            videoEncoderInputTimestamp += (gap - preVideoTimestamp);
-                            preVideoTimestamp = gap;
-                        }
+                        if (audio)
+                            audioEncoderInputTimestamp += gap;
+                        else
+                            videoEncoderInputTimestamp += gap;
+
                         if (MediaCodec.BUFFER_FLAG_END_OF_STREAM == decoderIndex) {
                             encoder.queueInputBuffer(encoderIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
                             Log.d(TAG, audio ? "Audio" : "Video" + " decoder received EOF");

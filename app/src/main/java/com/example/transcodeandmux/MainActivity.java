@@ -17,6 +17,7 @@ import androidx.core.app.ActivityCompat;
 import com.example.transcodeandmux.utils.TailTimer;
 import com.example.transcodeandmux.utils.TailTimerEditText;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,7 +25,7 @@ import java.util.List;
  * Created by weizheng.huang on 2019-11-11.
  */
 public class MainActivity extends Activity {
-    private WrapperDemo transcode;
+    private TransCodeWrapper1 transcode;
 //    private WrapperDemo transcode ;
     private AssetFileDescriptor srcPath ;
     private AssetFileDescriptor srcPath2 ;
@@ -41,7 +42,7 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.layout);
         transcodeBtn = findViewById(R.id.transcodeBtn);
-        srcPath = getResources().openRawResourceFd(R.raw.shape_of_my_heart);
+        srcPath = getResources().openRawResourceFd(R.raw.videoplayback);
         srcPath2 = getResources().openRawResourceFd(R.raw.shape_of_my_heart2);
         countEditText = findViewById(R.id.countOfTailTime);
         iContentView = findViewById(R.id.contentView);
@@ -101,7 +102,11 @@ public class MainActivity extends Activity {
         }
 
 //        transcode = new WrapperDemo(dstPath,fileList);
-        transcode = new WrapperDemo(dstPath , fileList);
+        try {
+            transcode = new TransCodeWrapper1(dstPath,fileList);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 
     private boolean verifyPermission(Activity activity){
