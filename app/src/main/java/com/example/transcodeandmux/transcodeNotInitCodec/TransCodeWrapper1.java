@@ -1,4 +1,4 @@
-package com.example.transcodeandmux;
+package com.example.transcodeandmux.transcodeNotInitCodec;
 
 import android.content.res.AssetFileDescriptor;
 import android.media.MediaCodec;

@@ -1,25 +1,47 @@
-package com.example.transcodeandmux;
+package com.example.transcodeandmux.transcodeInitCodec;
 
+import android.content.res.AssetFileDescriptor;
 import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
 import android.media.MediaExtractor;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
 import android.util.Log;
 
+import com.example.transcodeandmux.utils.TailTimer;
+
+import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.List;
 
 /**
  * Created by weizheng.huang on 2019-10-18.
  */
 
-public class Transcode {
+public class TranscodeWrapperDemo3 {
     /////////private  //////
+    private List<TailTimer> fileList;
+    private MediaExtractor extractor,audioExtractor;
+
+    private MediaCodec decodec,encodec,audioDecodec,audioEncodec;
+
+    private MediaMuxer muxer;
+    private String filePath;
+    private AssetFileDescriptor srcFilePath = null;
+    private AssetFileDescriptor srcFilePath2 = null;
     private int isMuxed = 0;
-    private int videoIndex,videoTrackIndex,audioIndex,audioTrackIndex;
+    private int audioTrackIndex = -1 ;
+    private int videoTrackIndex = -1 ;
+    private int videoIndex  = -1;
+    private int audioIndex = -1;
     private boolean isMuxerStarted = false;
+    private double assignSizeRate = 1.0;
     private double durationTotal = 0;
     private long TIME_US = 70000L;
-    private long startTime1,startTime2,endTime1,endTime2;
+    private long startTime1 = 0;
+    private long endTime1 = 0;
+    private long startTime2 = 0;
+    private long endTime2 = 0;
     private boolean isNeedTailed = false;
     private long timeA = 0;
     private long timeV = 0;
@@ -30,7 +52,7 @@ public class Transcode {
      * @param startTime  视频起始解码时间戳
      * @param endTime    视频终止解码时间戳
      */
-    public  void setTailTimeVideo(long startTime,long endTime){
+    private  void setTailTimeVideo(long startTime,long endTime){
         long s = 0;
         long e = (long)durationTotal;
         startTime *= 1000000;
@@ -45,7 +67,7 @@ public class Transcode {
      * @param startTime   音频起始解码时间戳
      * @param endTime     音频终止解码时间戳
      */
-    public  void setTailTimeAudio(long startTime , long endTime){
+    private  void setTailTimeAudio(long startTime , long endTime){
         long s = 0;
         long e = (long)durationTotal;
         startTime *= 1000000;
@@ -57,27 +79,263 @@ public class Transcode {
     }
 
 
-    Transcode(int videoIndex ,int audioIndex ,int videoTrackIndex ,int audioTrackIndex , long durationTotal){
-        this.videoIndex = videoIndex;
-        this.audioIndex = audioIndex;
-        this.videoTrackIndex = videoTrackIndex;
-        this.audioTrackIndex = audioTrackIndex;
-        this.durationTotal = durationTotal;
+    TranscodeWrapperDemo3(String filePath , List<TailTimer> fileList){
+        this.filePath = filePath;
+        this.fileList = fileList;
+        initMediaMuxer();
+        initVideoExtractor();
+        initAudioExtractor();
+        initVideoDecodec();
+        initVideoEncodec();
+        initAudioDecodec();
+        initAudioEncodec();
     }
 
     /**
      *  pauseAudio 控制音频比视频慢，保证音频线程每一段可以取到同一段视频的基准也就是第一帧关键帧
      */
     private boolean pauseAudio = true;
+    /**
+     * 以下总是先初始化codec再执行操作的原因是因为，后一段使用codec的时候，因为第一段接受了EOS指令导致codec停止工作，所以需要重置
+     * 而我这里没有重置，而是新建一个
+     * 替代方案：
+     *      codec.reset()
+     *      codec.configure(format, null, null, 0|MediaCodec.CONFIGURE_FLAG_ENCODE)
+     *      codec.start()
+     *  以上方案是根据codec状态得到的解决方案，
+     *  下面是解释：
+     *      codec(uninitiated) -> codec(configured)  -> codec(flushed) -> codec(running) -> codec(EOS) -> codec(released)
+     *      这是完整的状态，其中存在的闭环:
+     *      codec(running) -> codec(flushed)
+     *      codec(EOS) -> codec(flushed)
+     *      codec(EOS) -> codec(uninitiated) -> codec(configured) -> codec(flushed) -> codec(running) -> codec(EOS)
+     *      有几个状态转换需要调用的方法，就说比较陌生的地方，比如codec(flushed) 调用了dequeueInputBuffer() 就会进入到codec(running)
+     *      那running 或 EOS 回到 flushed 就调用flush()即可，不过这里我试过，没用。
+     *      所以我就用了第三个闭环，EOS 回到 uninitiated 就调用了reset()，然后就是重置codec正常使用。
+     */
+
+    private Thread inputThread = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            if (fileList != null){
+                for (int i = 0; i < fileList.size(); i++){
+                    initVideoDecodec();
+                    TailTimer tailTimer = fileList.get(i);
+                    setTailTimeVideo(tailTimer.getStartTime(),tailTimer.getEndTime());
+                    inputLoop();
+                    Log.d("tag","执行到fileListVideo的"+i);
+                }
+            }else{
+                inputLoop();
+            }
+
+            extractor.release();
+            decodec.stop();
+            decodec.release();
+            Log.v("tag","released decode");
+        }
+    });
+
+    private Thread outputThread = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            if (fileList != null){
+                for (int i = 0; i < fileList.size(); i++){
+                    initVideoEncodec();
+                    outputLoop();
+                    Log.d("tag","执行到fileListVideo的"+i);
+
+                }
+            }else{
+                outputLoop();
+            }
+            encodec.stop();
+            encodec.release();
+            Log.v("tag", "released encode");
+            isMuxed++;
+            releaseMuxer();
+        }
+    });
+
+    private Thread audioInputThread = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            if (fileList != null){
+                for (int i = 0; i < fileList.size(); i++){
+
+                    initAudioDecodec();
+                    TailTimer tailTimer = fileList.get(i);
+                    setTailTimeAudio(tailTimer.getStartTime(),tailTimer.getEndTime());
+                    audioInputLoop();
+                    Log.d("tag","执行到fileListAudio的"+i);
+
+                }
+            }else{
+                audioInputLoop();
+            }
+
+            audioExtractor.release();
+            audioDecodec.stop();
+            audioDecodec.release();
+            Log.v("tag","released audioDecode");
+
+        }
+    });
+    private Thread audioOutputThread = new Thread(new Runnable() {
+        @Override
+        public void run() {
+            if (fileList != null){
+                for (int i = 0; i < fileList.size(); i++){
+
+                    initAudioEncodec();
+
+                    audioOutputLoop();
+                    Log.d("tag","执行到fileListAudio的"+i);
 
 
-    public synchronized void releaseMuxer(MediaMuxer muxer){
-        isMuxed++;
+                }
+            }else{
+                audioOutputLoop();
+            }
+            audioEncodec.stop();
+            audioEncodec.release();
+            Log.v("tag","released audio encode");
+            isMuxed++;
+            releaseMuxer();
+        }
+    });
+    private synchronized void releaseMuxer(){
         if (isMuxed == 2){
             isMuxed++;
             muxer.stop();
             muxer.release();
             Log.v("tag","released muxer");
+        }
+    }
+    private  void initVideoExtractor(){
+        if (fileList != null){
+            srcFilePath = fileList.get(0).getSrcPath();
+        }
+        extractor = new MediaExtractor();
+        try {
+            extractor.setDataSource(srcFilePath);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        for (int i = 0; i < extractor.getTrackCount(); i++){
+            MediaFormat format = extractor.getTrackFormat(i);
+            String formatType = format.getString(MediaFormat.KEY_MIME);
+            assert formatType != null;
+            if (formatType.startsWith("video")){
+                videoIndex = i;
+                videoFormatType = formatType;
+                frameRate = format.getInteger(MediaFormat.KEY_FRAME_RATE);
+                bitRate = format.getInteger(MediaFormat.KEY_BIT_RATE);
+                width = format.getInteger(MediaFormat.KEY_WIDTH);
+                height = format.getInteger(MediaFormat.KEY_HEIGHT);
+                durationTotal = format.getLong(MediaFormat.KEY_DURATION);
+            }
+        }
+    }
+    private  void initAudioExtractor(){
+        if (fileList != null){
+            srcFilePath2 = fileList.get(0).getSrcPath();
+        }
+        audioExtractor = new MediaExtractor();
+        try{
+            audioExtractor.setDataSource(srcFilePath2);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        for (int i = 0; i < audioExtractor.getTrackCount(); i++){
+            MediaFormat format = audioExtractor.getTrackFormat(i);
+            String formatType = format.getString(MediaFormat.KEY_MIME);
+            assert formatType != null;
+            if (formatType.startsWith("audio")){
+                audioIndex = i;
+                audioFormatType = formatType;
+                audioBitRate = format.getInteger(MediaFormat.KEY_BIT_RATE);
+                sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE);
+                channelCount = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT);
+            }
+        }
+    }
+
+
+    private String videoFormatType = null;
+    private String audioFormatType = null;
+    private int width = -1;
+    private int height = -1;
+    private int frameRate = -1 ;
+    private int bitRate = -1;
+    private int audioBitRate = -1 ;
+    private int sampleRate = -1;
+    private int channelCount = -1;
+
+    private  void initAudioDecodec(){
+        try {
+            audioDecodec = MediaCodec.createDecoderByType(audioFormatType);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        MediaFormat format = audioExtractor.getTrackFormat(audioIndex);
+        audioDecodec.configure(format,null,null,0);
+        audioDecodec.start();
+    }
+
+    /**
+     * bitrate必须有
+     */
+    private  void initAudioEncodec(){
+        MediaFormat audioFormat = MediaFormat.createAudioFormat(audioFormatType, sampleRate, channelCount);
+        audioFormat.setInteger(MediaFormat.KEY_BIT_RATE,(int)(audioBitRate * assignSizeRate));
+        try {
+            audioEncodec = MediaCodec.createEncoderByType(audioFormatType);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        audioEncodec.configure(audioFormat,null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);
+        audioEncodec.start();
+    }
+
+    private void initVideoDecodec(){
+        try {
+            decodec = MediaCodec.createDecoderByType(videoFormatType);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        MediaFormat format = extractor.getTrackFormat(videoIndex);
+        decodec.configure(format,null,null,0);
+        decodec.start();
+
+    }
+
+    /**
+     * bitrate、colorformat、iframeInterval、frameRate必须有
+     */
+    private void initVideoEncodec(){
+        MediaFormat videoFormat = MediaFormat.createVideoFormat(videoFormatType, width, height);
+
+        videoFormat.setInteger(MediaFormat.KEY_FRAME_RATE, frameRate);
+        videoFormat.setInteger(MediaFormat.KEY_BIT_RATE,(int)(bitRate * assignSizeRate));
+        videoFormat.setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible);
+        videoFormat.setInteger(MediaFormat.KEY_I_FRAME_INTERVAL,1 );
+
+
+        try {
+            encodec = MediaCodec.createEncoderByType(videoFormatType);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        encodec.configure(videoFormat, null,null,MediaCodec.CONFIGURE_FLAG_ENCODE);
+        encodec.start();
+    }
+    private void initMediaMuxer(){
+
+        try {
+            muxer = new MediaMuxer(filePath,MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
 
@@ -92,7 +350,7 @@ public class Transcode {
      * 直接塞到编码器无疑效率更高。
      *
      */
-    public void inputLoop(MediaExtractor extractor , MediaCodec decodec ,MediaCodec encodec) {
+    private void inputLoop() {
         //////////video decode///////////////
         extractor.selectTrack(videoIndex);
         MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
@@ -103,7 +361,6 @@ public class Transcode {
                 extractor.seekTo(startTime1,MediaExtractor.SEEK_TO_NEXT_SYNC);
             }
             startsTime1 = extractor.getSampleTime();
-
         }
         boolean readEOS = false;
         while (true) {
@@ -115,6 +372,7 @@ public class Transcode {
                     int size = readSampleData(extractor, inputBuffer);
                     if (size > 0) {
                         if (extractor.getSampleTime() > endTime1 && isNeedTailed) {
+
                             decodec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
                             readEOS = true;
                         } else {
@@ -166,7 +424,7 @@ public class Transcode {
      * info1为什么要有的原因也是为了每一段的播放最终时间戳作为上一段的起始播放时间戳
      *
      */
-    public  void outputLoop(MediaCodec encodec , MediaMuxer muxer){
+    private void outputLoop(){
         MediaCodec.BufferInfo mediaInfo = new MediaCodec.BufferInfo();
         MediaCodec.BufferInfo info1 = null;
         final long time = timeV;
@@ -183,7 +441,7 @@ public class Transcode {
                     if (videoTrackIndex < 0)
                         videoTrackIndex = muxer.addTrack(format);
                     if (!isMuxerStarted) {
-                        startMuxer(muxer);
+                        startMuxer();
                     }
                     startTime = startsTime1;
                     pauseAudio = false;
@@ -224,7 +482,7 @@ public class Transcode {
      * 而在后续的编码里，也有一段sleep操作减少丢帧，效果是显著的
      *
      */
-    public  void audioInputLoop(MediaExtractor audioExtractor , MediaCodec audioDecodec , MediaCodec audioEncodec){
+    private void audioInputLoop() {
 
         audioExtractor.selectTrack(audioIndex);
         MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
@@ -246,7 +504,7 @@ public class Transcode {
         }
         if (isNeedTailed){
             audioExtractor.seekTo(startsTime1,MediaExtractor.SEEK_TO_CLOSEST_SYNC);
-            if (audioExtractor.getSampleTime() < startTime2){
+            if (audioExtractor.getSampleTime() < startsTime1){
                 audioExtractor.seekTo(startsTime1,MediaExtractor.SEEK_TO_NEXT_SYNC);
             }
         }
@@ -314,7 +572,7 @@ public class Transcode {
     /**
      * 同视频，取准起始解码时间戳
      */
-    public void audioOutputLoop(MediaCodec audioEncodec ,MediaMuxer muxer){
+    private void audioOutputLoop(){
 
         MediaCodec.BufferInfo mediaInfo = new MediaCodec.BufferInfo();
         MediaCodec.BufferInfo info1 = null;
@@ -339,7 +597,7 @@ public class Transcode {
                     if (audioTrackIndex < 0)
                         audioTrackIndex = muxer.addTrack(format);
                     if (!isMuxerStarted) {
-                        startMuxer(muxer);
+                        startMuxer();
                     }
                     break;
                 }
@@ -387,7 +645,7 @@ public class Transcode {
     }
 
 
-    private synchronized void startMuxer(MediaMuxer muxer){
+    private synchronized void startMuxer(){
         if ( 0 <= audioTrackIndex && 0<= videoTrackIndex && !isMuxerStarted){
 
             muxer.start();
@@ -398,5 +656,20 @@ public class Transcode {
     private synchronized int readSampleData(MediaExtractor extractor , ByteBuffer buffer){
         return extractor.readSampleData(buffer,0);
     }
+    /////////public //////////
+    void startTranscode(){
+
+        inputThread.start();
+        outputThread.start();
+        audioInputThread.start();
+        audioOutputThread.start();
+    }
+
+
+
+
+
+
+
 
 }

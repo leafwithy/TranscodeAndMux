@@ -14,6 +14,7 @@ import android.widget.LinearLayout;
 import androidx.annotation.Nullable;
 import androidx.core.app.ActivityCompat;
 
+import com.example.transcodeandmux.transcodeNotInitCodec.WrapperDemo;
 import com.example.transcodeandmux.utils.TailTimer;
 import com.example.transcodeandmux.utils.TailTimerEditText;
 
@@ -25,8 +26,8 @@ import java.util.List;
  * Created by weizheng.huang on 2019-11-11.
  */
 public class MainActivity extends Activity {
-    private TransCodeWrapper1 transcode;
-//    private WrapperDemo transcode ;
+    private WrapperDemo transcode;
+//    private WrapperDemo Transcode ;
     private AssetFileDescriptor srcPath ;
     private AssetFileDescriptor srcPath2 ;
     private String dstPath = Environment.getExternalStorageDirectory().getAbsolutePath() +"/shape1.mp4";
@@ -101,9 +102,9 @@ public class MainActivity extends Activity {
             fileList.add(new TailTimer(startTime,endTime,srcPath,srcPath2));
         }
 
-//        transcode = new WrapperDemo(dstPath,fileList);
+//        Transcode = new WrapperDemo(dstPath,fileList);
         try {
-            transcode = new TransCodeWrapper1(dstPath,fileList);
+            transcode = new WrapperDemo(dstPath,fileList);
         } catch (IOException e) {
             e.printStackTrace();
         }

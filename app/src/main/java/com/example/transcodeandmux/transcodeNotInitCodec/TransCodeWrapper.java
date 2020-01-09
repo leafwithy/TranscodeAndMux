@@ -1,4 +1,4 @@
-package com.nio.screenprojection;
+package com.example.transcodeandmux.transcodeNotInitCodec;
 
 import android.media.MediaCodec;
 import android.media.MediaExtractor;
